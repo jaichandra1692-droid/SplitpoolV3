@@ -1,0 +1,838 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SplitPool — Fund Sharing</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0e0f11; --surface: #16181c; --surface2: #1e2128; --border: #2a2d35;
+    --accent-bad: #c8f060; --accent-coffee: #e8a84c; --text: #f0f0ee;
+    --muted: #6b7280; --danger: #f05060; --success: #4ade80;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: var(--bg); color: var(--text); font-family: 'DM Mono', monospace; min-height: 100vh; overflow-x: hidden; }
+
+  /* ── LOADING SCREEN ── */
+  #loading-screen {
+    position: fixed; inset: 0; background: var(--bg);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    z-index: 9999; gap: 1.2rem;
+  }
+  #loading-screen.hidden { display: none; }
+  .loader-logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 2rem; letter-spacing: -0.04em; }
+  .loader-logo span { color: var(--accent-bad); }
+  .loader-bar { width: 200px; height: 3px; background: var(--border); border-radius: 2px; overflow: hidden; }
+  .loader-bar-fill { height: 100%; width: 0%; background: var(--accent-bad); border-radius: 2px; animation: loadBar 1.5s ease forwards; }
+  @keyframes loadBar { to { width: 100%; } }
+  .loader-text { font-size: 0.72rem; color: var(--muted); letter-spacing: 0.1em; }
+
+  /* ── CONNECTION STATUS ── */
+  #conn-status {
+    position: fixed; top: 0; left: 0; right: 0; z-index: 200;
+    padding: 0.5rem 1rem; font-size: 0.72rem; letter-spacing: 0.06em;
+    text-align: center; transform: translateY(-100%); transition: transform 0.3s;
+  }
+  #conn-status.show { transform: translateY(0); }
+  #conn-status.online  { background: rgba(74,222,128,0.15); color: var(--success); border-bottom: 1px solid rgba(74,222,128,0.3); }
+  #conn-status.offline { background: rgba(240,80,96,0.15);  color: var(--danger);  border-bottom: 1px solid rgba(240,80,96,0.3); }
+
+  nav { display: flex; align-items: center; padding: 0 2rem; background: var(--surface); border-bottom: 1px solid var(--border); position: sticky; top: 0; z-index: 100; flex-wrap: wrap; }
+  .logo { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.3rem; letter-spacing: -0.03em; padding: 1.1rem 2rem 1.1rem 0; margin-right: 2rem; border-right: 1px solid var(--border); color: var(--text); }
+  .logo span { color: var(--accent-bad); }
+  .nav-tabs { display: flex; flex-wrap: wrap; }
+  .nav-tab { padding: 1.1rem 1.1rem; font-family: 'DM Mono', monospace; font-size: 0.73rem; letter-spacing: 0.07em; text-transform: uppercase; cursor: pointer; border: none; background: transparent; color: var(--muted); border-bottom: 2px solid transparent; transition: all 0.2s; position: relative; top: 1px; }
+  .nav-tab:hover { color: var(--text); }
+  .nav-tab.active { color: var(--text); border-bottom-color: var(--accent-bad); }
+  .nav-live { display: inline-flex; align-items: center; gap: 0.4rem; margin-left: auto; padding: 0.4rem 0.9rem; font-size: 0.68rem; letter-spacing: 0.08em; color: var(--success); }
+  .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--success); animation: pulse 1.5s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.5;transform:scale(0.8)} }
+
+  .page { display: none; padding: 2.5rem 2rem; max-width: 860px; margin: 0 auto; }
+  .page.active { display: block; animation: fadeIn 0.25s ease; }
+  @keyframes fadeIn { from { opacity:0; transform:translateY(8px); } to { opacity:1; transform:translateY(0); } }
+
+  h1 { font-family: 'Syne', sans-serif; font-size: 2rem; font-weight: 800; letter-spacing: -0.04em; margin-bottom: 0.4rem; }
+  .page-sub { color: var(--muted); font-size: 0.78rem; margin-bottom: 2rem; letter-spacing: 0.05em; }
+
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.8rem; margin-bottom: 1.5rem; }
+  .card-title { font-family: 'Syne', sans-serif; font-size: 0.85rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); margin-bottom: 1.2rem; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+
+  .form-row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1rem; }
+  .form-row.single { grid-template-columns: 1fr; }
+  .field { display: flex; flex-direction: column; gap: 0.4rem; }
+  .field label { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  input, select { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 0.7rem 0.9rem; color: var(--text); font-family: 'DM Mono', monospace; font-size: 0.88rem; outline: none; transition: border-color 0.2s; width: 100%; }
+  input:focus, select:focus { border-color: var(--accent-bad); }
+  select option { background: var(--surface2); }
+
+  .multi-select-container { background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 0.5rem; max-height: 160px; overflow-y: auto; }
+  .checkbox-item { display: flex; align-items: center; gap: 0.6rem; padding: 0.45rem 0.5rem; border-radius: 6px; cursor: pointer; transition: background 0.15s; font-size: 0.85rem; user-select: none; }
+  .checkbox-item:hover { background: var(--border); }
+  .checkbox-item input[type="checkbox"] { width: 15px; height: 15px; accent-color: var(--accent-bad); cursor: pointer; flex-shrink: 0; padding: 0; border: none; border-radius: 0; }
+
+  .btn { padding: 0.75rem 1.5rem; border-radius: 8px; font-family: 'DM Mono', monospace; font-size: 0.82rem; font-weight: 500; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; border: none; transition: all 0.2s; }
+  .btn-primary { background: var(--accent-bad); color: #0e0f11; }
+  .btn-primary:hover { background: #d4f56a; transform: translateY(-1px); }
+  .btn-sm { padding: 0.35rem 0.8rem; font-size: 0.7rem; }
+  .btn-outline-danger { background: transparent; color: var(--danger); border: 1px solid var(--danger); }
+  .btn-outline-danger:hover { background: var(--danger); color: white; }
+  .btn-outline-success { background: transparent; color: var(--success); border: 1px solid var(--success); font-family: 'DM Mono', monospace; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; padding: 0.35rem 0.8rem; border-radius: 8px; transition: all 0.2s; }
+  .btn-outline-success:hover { background: var(--success); color: #0e0f11; }
+  .badge-paid-btn { background: rgba(74,222,128,0.12); color: var(--success); border: 1px solid rgba(74,222,128,0.3); font-family: 'DM Mono', monospace; font-size: 0.7rem; letter-spacing: 0.06em; text-transform: uppercase; padding: 0.35rem 0.8rem; border-radius: 8px; }
+
+  .users-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 0.8rem; margin-top: 1rem; }
+  .user-chip { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; background: var(--surface2); border: 1px solid var(--border); border-radius: 8px; padding: 0.6rem 0.8rem; font-size: 0.83rem; }
+  .user-avatar { width: 28px; height: 28px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.7rem; font-weight: 700; font-family: 'Syne', sans-serif; flex-shrink: 0; }
+
+  .badge { display: inline-flex; align-items: center; gap: 0.3rem; padding: 0.25rem 0.6rem; border-radius: 20px; font-size: 0.72rem; font-weight: 500; letter-spacing: 0.05em; }
+  .badge-bad { background: rgba(200,240,96,0.15); color: var(--accent-bad); }
+  .badge-coffee { background: rgba(232,168,76,0.15); color: var(--accent-coffee); }
+  .badge-old { background: rgba(240,80,96,0.12); color: var(--danger); border: 1px solid rgba(240,80,96,0.2); font-size: 0.65rem; padding: 0.18rem 0.45rem; }
+
+  .tx-list { display: flex; flex-direction: column; gap: 0.6rem; }
+  .tx-item { display: grid; grid-template-columns: auto 1fr auto; gap: 1rem; align-items: center; background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 0.9rem 1.1rem; transition: border-color 0.2s; }
+  .tx-item:hover { border-color: var(--muted); }
+  .tx-info { display: flex; flex-direction: column; gap: 0.25rem; min-width: 0; }
+  .tx-meta { color: var(--muted); font-size: 0.73rem; }
+  .tx-right { display: flex; flex-direction: column; align-items: flex-end; gap: 0.4rem; }
+  .tx-amount { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 1.05rem; }
+
+  .stats-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1rem; margin-bottom: 1.5rem; }
+  .stat-card { background: var(--surface); border: 1px solid var(--border); border-radius: 12px; padding: 1.2rem 1.4rem; }
+  .stat-label { font-size: 0.72rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.4rem; }
+  .stat-value { font-family: 'Syne', sans-serif; font-size: 1.6rem; font-weight: 800; }
+
+  .split-table { width: 100%; border-collapse: collapse; }
+  .split-table th { text-align: left; font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); padding: 0.5rem 0.8rem 0.8rem; border-bottom: 1px solid var(--border); }
+  .split-table td { padding: 0.85rem 0.8rem; border-bottom: 1px solid var(--border); font-size: 0.88rem; }
+  .split-table tr:last-child td { border-bottom: none; }
+  .bal-pos { color: var(--accent-bad); font-weight: 600; }
+  .bal-neg { color: var(--danger); font-weight: 600; }
+  .bal-zero { color: var(--muted); }
+
+  .due-card { background: var(--surface2); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.3rem; margin-bottom: 0.7rem; transition: border-color 0.2s; }
+  .due-card:hover { border-color: var(--muted); }
+  .due-card.is-paid { opacity: 0.4; border-style: dashed; }
+  .due-header { display: flex; align-items: center; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
+  .due-persons { display: flex; align-items: center; gap: 0.65rem; flex: 1; min-width: 0; flex-wrap: wrap; }
+  .due-arrow { color: var(--muted); font-size: 0.95rem; }
+  .due-right { display: flex; align-items: center; gap: 0.8rem; flex-shrink: 0; }
+  .due-amount { font-family: 'Syne', sans-serif; font-weight: 800; font-size: 1.15rem; color: var(--danger); }
+  .due-amount.paid { color: var(--success); }
+  .due-breakdown { margin-top: 0.8rem; padding-top: 0.8rem; border-top: 1px solid var(--border); }
+  .due-breakdown-label { font-size: 0.7rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-bottom: 0.5rem; }
+  .due-row { display: flex; justify-content: space-between; font-size: 0.78rem; padding: 0.25rem 0; }
+  .due-row span:first-child { color: var(--muted); }
+
+  .filter-row { display: flex; gap: 0.5rem; margin-bottom: 1.2rem; flex-wrap: wrap; }
+  .filter-btn { padding: 0.4rem 1rem; border-radius: 20px; font-size: 0.75rem; letter-spacing: 0.06em; text-transform: uppercase; cursor: pointer; border: 1px solid var(--border); background: transparent; color: var(--muted); font-family: 'DM Mono', monospace; transition: all 0.2s; }
+  .filter-btn:hover, .filter-btn.f-active { background: var(--surface2); color: var(--text); border-color: var(--muted); }
+  .filter-btn.f-bad { background: rgba(200,240,96,0.1); color: var(--accent-bad); border-color: var(--accent-bad); }
+  .filter-btn.f-coffee { background: rgba(232,168,76,0.1); color: var(--accent-coffee); border-color: var(--accent-coffee); }
+
+  .empty { text-align: center; padding: 3rem; color: var(--muted); font-size: 0.85rem; }
+  .empty-icon { font-size: 2.5rem; margin-bottom: 0.8rem; }
+
+  .toast { position: fixed; bottom: 2rem; right: 2rem; background: var(--surface2); border: 1px solid var(--accent-bad); color: var(--text); padding: 0.8rem 1.4rem; border-radius: 8px; font-size: 0.82rem; z-index: 999; transform: translateY(20px); opacity: 0; transition: all 0.3s; pointer-events: none; }
+  .toast.show { transform: translateY(0); opacity: 1; }
+
+  .credit { text-align: center; font-size: 0.7rem; color: var(--muted); letter-spacing: 0.08em; padding: 1.5rem 0 0.5rem; border-top: 1px solid var(--border); margin-top: 2rem; }
+  .credit span { color: var(--accent-bad); }
+
+  /* SETUP SCREEN */
+  #setup-screen { position: fixed; inset: 0; background: var(--bg); z-index: 8000; display: flex; align-items: center; justify-content: center; padding: 2rem; }
+  #setup-screen.hidden { display: none; }
+  .setup-box { background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 2.5rem; max-width: 500px; width: 100%; }
+  .setup-title { font-family: 'Syne', sans-serif; font-size: 1.6rem; font-weight: 800; margin-bottom: 0.5rem; }
+  .setup-sub { color: var(--muted); font-size: 0.78rem; margin-bottom: 2rem; line-height: 1.6; }
+  .setup-field { display: flex; flex-direction: column; gap: 0.4rem; margin-bottom: 1rem; }
+  .setup-field label { font-size: 0.72rem; letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted); }
+  .setup-hint { font-size: 0.7rem; color: var(--muted); margin-top: 0.3rem; }
+  .setup-error { color: var(--danger); font-size: 0.75rem; margin-top: 0.5rem; display: none; }
+
+  ::-webkit-scrollbar { width: 5px; height: 5px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 3px; }
+
+  @media (max-width: 620px) {
+    .form-row { grid-template-columns: 1fr; }
+    .stats-row { grid-template-columns: 1fr 1fr; }
+    h1 { font-size: 1.5rem; }
+    .tx-item { grid-template-columns: 1fr; }
+    .tx-right { flex-direction: row; justify-content: space-between; align-items: center; }
+  }
+</style>
+</head>
+<body>
+
+<!-- LOADING SCREEN -->
+<div id="loading-screen">
+  <div class="loader-logo">Split<span>Pool</span></div>
+  <div class="loader-bar"><div class="loader-bar-fill"></div></div>
+  <div class="loader-text" id="loading-text">Connecting to database...</div>
+</div>
+
+<!-- FIREBASE SETUP SCREEN (shown if no config saved) -->
+<div id="setup-screen" class="hidden">
+  <div class="setup-box">
+    <div class="setup-title">🔧 Firebase Setup</div>
+    <div class="setup-sub">
+      Paste your Firebase project config below to connect this app to a live shared database.
+      You only need to do this once.<br><br>
+      Get this from: <strong>Firebase Console → Project Settings → Your Apps → SDK setup</strong>
+    </div>
+    <div class="setup-field">
+      <label>API Key</label>
+      <input type="text" id="cfg-apiKey" placeholder="AIzaSy...">
+    </div>
+    <div class="setup-field">
+      <label>Auth Domain</label>
+      <input type="text" id="cfg-authDomain" placeholder="your-app.firebaseapp.com">
+    </div>
+    <div class="setup-field">
+      <label>Database URL</label>
+      <input type="text" id="cfg-databaseURL" placeholder="https://your-app-default-rtdb.firebaseio.com">
+      <div class="setup-hint">⚠️ This is required — find it in Realtime Database section</div>
+    </div>
+    <div class="setup-field">
+      <label>Project ID</label>
+      <input type="text" id="cfg-projectId" placeholder="your-app">
+    </div>
+    <div class="setup-field">
+      <label>App ID</label>
+      <input type="text" id="cfg-appId" placeholder="1:123456:web:abc123">
+    </div>
+    <div class="setup-error" id="setup-error">Please fill in all fields correctly.</div>
+    <div style="margin-top:1.5rem;display:flex;gap:1rem;flex-wrap:wrap;">
+      <button class="btn btn-primary" onclick="saveFirebaseConfig()">Connect to Firebase →</button>
+      <button class="btn btn-sm btn-outline-danger" onclick="useDemoMode()" style="padding:0.75rem 1rem;">Use Demo (local only)</button>
+    </div>
+  </div>
+</div>
+
+<!-- CONNECTION STATUS BAR -->
+<div id="conn-status"></div>
+
+<!-- MAIN APP -->
+<nav>
+  <div class="logo">Split<span>Pool</span></div>
+  <div class="nav-tabs">
+    <button class="nav-tab active" onclick="showPage('users')">👥 Members</button>
+    <button class="nav-tab" onclick="showPage('spend')">💸 Spend</button>
+    <button class="nav-tab" onclick="showPage('split')">📊 Split View</button>
+    <button class="nav-tab" onclick="showPage('dues')">💰 Dues</button>
+  </div>
+  <div class="nav-live" id="nav-live" style="display:none;">
+    <div class="live-dot"></div> LIVE
+  </div>
+</nav>
+
+<!-- MEMBERS PAGE -->
+<div id="page-users" class="page active">
+  <h1>Members</h1>
+  <p class="page-sub">ADD AND MANAGE YOUR GROUP MEMBERS</p>
+  <div class="card">
+    <div class="card-title" style="display:block;">Add New Member</div>
+    <div class="form-row" style="grid-template-columns:1fr auto;align-items:end;">
+      <div class="field">
+        <label>Member Name</label>
+        <input type="text" id="new-user-name" placeholder="e.g. Alex" maxlength="30" onkeypress="if(event.key==='Enter')addUser()">
+      </div>
+      <button class="btn btn-primary" onclick="addUser()">+ Add</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="display:block;">Current Members (<span id="user-count">0</span>)</div>
+    <div id="users-grid" class="users-grid">
+      <div class="empty"><div class="empty-icon">👤</div>No members yet</div>
+    </div>
+  </div>
+  <div class="credit">Designed and created by <span>Jai</span> &nbsp;✦&nbsp; SplitPool v3.0 Firebase</div>
+</div>
+
+<!-- SPEND PAGE -->
+<div id="page-spend" class="page">
+  <h1>Add Spend</h1>
+  <p class="page-sub">RECORD A NEW EXPENSE</p>
+  <div class="card">
+    <div class="card-title" style="display:block;">Expense Details</div>
+    <div class="form-row">
+      <div class="field">
+        <label>Category</label>
+        <select id="spend-category">
+          <option value="badminton">🏸 Badminton</option>
+          <option value="coffee">☕ Black Coffee</option>
+        </select>
+      </div>
+      <div class="field">
+        <label>Date</label>
+        <input type="date" id="spend-date">
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="field">
+        <label>Paid By</label>
+        <select id="spend-payer"><option value="">— Select member —</option></select>
+      </div>
+      <div class="field">
+        <label>Amount (₹)</label>
+        <input type="number" id="spend-amount" placeholder="0.00" min="0" step="0.01">
+      </div>
+    </div>
+    <div class="form-row single">
+      <div class="field">
+        <label>Note (optional)</label>
+        <input type="text" id="spend-note" placeholder="e.g. Court booking at City Sports">
+      </div>
+    </div>
+    <div class="form-row single">
+      <div class="field">
+        <label>Split Among</label>
+        <div class="multi-select-container" id="split-among-list">
+          <div style="color:var(--muted);font-size:0.82rem;padding:0.5rem;">Add members first to split</div>
+        </div>
+        <div style="font-size:0.7rem;color:var(--muted);margin-top:0.3rem;">Check all members who share this expense equally</div>
+      </div>
+    </div>
+    <div style="margin-top:1.2rem;display:flex;justify-content:flex-end;">
+      <button class="btn btn-primary" onclick="addSpend()">Record Expense →</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title">
+      <span>Recent Expenses</span>
+      <button class="btn btn-sm btn-outline-danger" onclick="deleteOldExpenses()">🗑 Clear &gt;2 Months Old</button>
+    </div>
+    <div class="filter-row">
+      <button class="filter-btn f-active" id="filter-all" onclick="setFilter('all')">All</button>
+      <button class="filter-btn" id="filter-bad" onclick="setFilter('badminton')">🏸 Badminton</button>
+      <button class="filter-btn" id="filter-coffee" onclick="setFilter('coffee')">☕ Coffee</button>
+    </div>
+    <div id="tx-list" class="tx-list">
+      <div class="empty"><div class="empty-icon">🧾</div>No expenses recorded yet</div>
+    </div>
+  </div>
+</div>
+
+<!-- SPLIT PAGE -->
+<div id="page-split" class="page">
+  <h1>Split View</h1>
+  <p class="page-sub">OVERALL BALANCE SHEET</p>
+  <div class="stats-row">
+    <div class="stat-card"><div class="stat-label">Total Spent</div><div class="stat-value" id="stat-total">₹0</div></div>
+    <div class="stat-card" style="border-color:rgba(200,240,96,0.3);"><div class="stat-label">🏸 Badminton</div><div class="stat-value" id="stat-bad" style="color:var(--accent-bad);">₹0</div></div>
+    <div class="stat-card" style="border-color:rgba(232,168,76,0.3);"><div class="stat-label">☕ Coffee</div><div class="stat-value" id="stat-coffee" style="color:var(--accent-coffee);">₹0</div></div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="display:block;">Balance Sheet</div>
+    <div id="balance-table-wrap"><div class="empty"><div class="empty-icon">⚖️</div>No data yet</div></div>
+  </div>
+</div>
+
+<!-- DUES PAGE -->
+<div id="page-dues" class="page">
+  <h1>Dues</h1>
+  <p class="page-sub">WHO NEEDS TO PAY WHOM — MARK WHEN SETTLED</p>
+  <div class="stats-row" style="grid-template-columns:1fr 1fr;">
+    <div class="stat-card" style="border-color:rgba(240,80,96,0.3);"><div class="stat-label">Pending</div><div class="stat-value" id="due-pending" style="color:var(--danger);">₹0</div></div>
+    <div class="stat-card" style="border-color:rgba(74,222,128,0.3);"><div class="stat-label">Paid</div><div class="stat-value" id="due-paid" style="color:var(--success);">₹0</div></div>
+  </div>
+  <div class="card">
+    <div class="card-title">
+      <span>Payment Dues</span>
+      <button class="btn btn-sm btn-outline-danger" onclick="clearPaidDues()">Clear Paid</button>
+    </div>
+    <div id="dues-list"><div class="empty"><div class="empty-icon">✅</div>All settled up!</div></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- Firebase SDK -->
+<script type="module">
+import { initializeApp }          from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+import { getDatabase, ref, set, push, remove, onValue, off, serverTimestamp }
+  from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+// ══════════════════════════════════════════════════════
+//  PASTE YOUR FIREBASE CONFIG HERE
+//  Replace ALL the placeholder values below with your
+//  actual values from Firebase Console → Project Settings
+// ══════════════════════════════════════════════════════
+const FIREBASE_CONFIG = {
+  apiKey:            "PASTE_YOUR_API_KEY_HERE",
+  authDomain:        "PASTE_YOUR_AUTH_DOMAIN_HERE",
+  databaseURL:       "PASTE_YOUR_DATABASE_URL_HERE",
+  projectId:         "PASTE_YOUR_PROJECT_ID_HERE",
+  storageBucket:     "PASTE_YOUR_STORAGE_BUCKET_HERE",
+  messagingSenderId: "PASTE_YOUR_MESSAGING_SENDER_ID_HERE",
+  appId:             "PASTE_YOUR_APP_ID_HERE"
+};
+// ══════════════════════════════════════════════════════
+
+// ── HELPERS ───────────────────────────────────────────
+const fmt      = n  => '₹' + Number(n).toFixed(2);
+const dueKey   = (a,b) => a + '|||' + b;
+const COLORS   = ['#c8f060','#e8a84c','#60c8f0','#f060a0','#a060f0','#60f0a0','#f09060','#60a0f0'];
+function uColor(name){ let h=0; for(let c of name) h+=c.charCodeAt(0); return COLORS[h%COLORS.length]; }
+function uInit(name){ return name.split(' ').map(w=>w[0]).join('').toUpperCase().slice(0,2); }
+function avatar(name,size=28,fs='0.7rem'){
+  return `<div class="user-avatar" style="width:${size}px;height:${size}px;font-size:${fs};background:${uColor(name)}20;color:${uColor(name)}">${uInit(name)}</div>`;
+}
+function toast(msg){
+  const t=document.getElementById('toast');
+  t.textContent=msg; t.classList.add('show');
+  setTimeout(()=>t.classList.remove('show'),2600);
+}
+function isOld(dateStr){ const d=new Date(dateStr),cut=new Date(); cut.setMonth(cut.getMonth()-2); return d<cut; }
+
+// ── STATE (always in sync with Firebase) ──────────────
+let S = { users:{}, expenses:{}, paidDues:{} };
+let txFilter = 'all';
+let db, isFirebase = false;
+
+// ── CHECK CONFIG ─────────────────────────────────────
+function configIsValid(cfg){
+  return cfg && cfg.apiKey && !cfg.apiKey.includes('PASTE') && cfg.databaseURL && !cfg.databaseURL.includes('PASTE');
+}
+
+// ── INIT ─────────────────────────────────────────────
+function initApp(cfg){
+  // Hide setup screen, show loading
+  document.getElementById('setup-screen').classList.add('hidden');
+  document.getElementById('loading-text').textContent = 'Connecting to Firebase...';
+
+  try {
+    const app = initializeApp(cfg);
+    db = getDatabase(app);
+    isFirebase = true;
+    document.getElementById('nav-live').style.display = 'flex';
+    setupRealtimeListeners();
+  } catch(err){
+    document.getElementById('loading-text').textContent = 'Connection failed. Using local mode.';
+    console.error('Firebase init error:', err);
+    fallbackToLocal();
+  }
+}
+
+// ── REALTIME LISTENERS ────────────────────────────────
+function setupRealtimeListeners(){
+  // Listen to users
+  onValue(ref(db,'users'), snap=>{
+    S.users = snap.val() || {};
+    renderUsersPage();
+    refreshSpendDropdowns();
+    renderCurrentPage();
+    hideLoading();
+  });
+
+  // Listen to expenses
+  onValue(ref(db,'expenses'), snap=>{
+    S.expenses = snap.val() || {};
+    renderTxList();
+    renderCurrentPage();
+  });
+
+  // Listen to paidDues
+  onValue(ref(db,'paidDues'), snap=>{
+    S.paidDues = snap.val() || {};
+    renderDuesPage();
+  });
+
+  // Connection state
+  onValue(ref(db,'.info/connected'), snap=>{
+    const connected = snap.val();
+    showConnStatus(connected);
+  });
+}
+
+function hideLoading(){
+  setTimeout(()=>{
+    document.getElementById('loading-screen').classList.add('hidden');
+  }, 600);
+}
+
+function showConnStatus(online){
+  const el = document.getElementById('conn-status');
+  el.textContent = online ? '🟢 Connected — changes sync live for everyone' : '🔴 Offline — reconnecting...';
+  el.className = 'show ' + (online ? 'online' : 'offline');
+  if(online) setTimeout(()=>el.classList.remove('show'), 3000);
+}
+
+// ── FALLBACK LOCAL MODE ───────────────────────────────
+function fallbackToLocal(){
+  isFirebase = false;
+  try {
+    const raw = localStorage.getItem('splitpool_local');
+    if(raw){ const p=JSON.parse(raw); S.users=p.users||{}; S.expenses=p.expenses||{}; S.paidDues=p.paidDues||{}; }
+  } catch(e){}
+  hideLoading();
+  renderUsersPage();
+  toast('⚠️ Running in local mode — data not shared');
+}
+
+function localSave(){
+  if(!isFirebase) try{ localStorage.setItem('splitpool_local', JSON.stringify(S)); }catch(e){}
+}
+
+// ── HELPERS: Convert object→array ────────────────────
+function usersArr()    { return Object.entries(S.users||{}).map(([id,v])=>({id,...v})); }
+function expensesArr() { return Object.entries(S.expenses||{}).map(([id,v])=>({id,...v})); }
+function paidDuesArr() { return Object.keys(S.paidDues||{}); }
+
+// ── NAVIGATION ────────────────────────────────────────
+let currentPage = 'users';
+function showPage(id){
+  currentPage = id;
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.querySelectorAll('.nav-tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('page-'+id).classList.add('active');
+  ['users','spend','split','dues'].forEach((pg,i)=>{
+    if(pg===id) document.querySelectorAll('.nav-tab')[i].classList.add('active');
+  });
+  if(id==='spend') renderSpendPage();
+  if(id==='split') renderSplitPage();
+  if(id==='dues')  renderDuesPage();
+}
+window.showPage = showPage;
+
+function renderCurrentPage(){
+  if(currentPage==='split') renderSplitPage();
+  if(currentPage==='dues')  renderDuesPage();
+}
+
+// ── MEMBERS ───────────────────────────────────────────
+async function addUser(){
+  const inp = document.getElementById('new-user-name');
+  const name = inp.value.trim();
+  if(!name){ toast('Please enter a name'); return; }
+  const users = usersArr();
+  if(users.find(u=>u.name.toLowerCase()===name.toLowerCase())){ toast('Member already exists!'); return; }
+  const data = { name, createdAt: Date.now() };
+  if(isFirebase){ await push(ref(db,'users'), data); }
+  else { const id='u'+Date.now(); S.users[id]=data; localSave(); renderUsersPage(); refreshSpendDropdowns(); }
+  inp.value='';
+  toast(name + ' added! 🎉');
+}
+window.addUser = addUser;
+
+async function removeUser(id){
+  const users = usersArr();
+  const u = users.find(u=>u.id===id);
+  if(!u || !confirm(`Remove ${u.name}? Expenses stay in history.`)) return;
+  if(isFirebase){ await remove(ref(db,'users/'+id)); }
+  else { delete S.users[id]; localSave(); renderUsersPage(); }
+  toast('Member removed');
+}
+window.removeUser = removeUser;
+
+function renderUsersPage(){
+  const users = usersArr();
+  const g = document.getElementById('users-grid');
+  document.getElementById('user-count').textContent = users.length;
+  if(!users.length){ g.innerHTML='<div class="empty"><div class="empty-icon">👤</div>No members yet</div>'; return; }
+  g.innerHTML=users.map(u=>`
+    <div class="user-chip">
+      <div style="display:flex;align-items:center;gap:0.5rem;overflow:hidden;flex:1;min-width:0;">
+        ${avatar(u.name)}
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${u.name}</span>
+      </div>
+      <button class="btn btn-sm btn-outline-danger" onclick="removeUser('${u.id}')">✕</button>
+    </div>`).join('');
+}
+
+// ── SPEND ─────────────────────────────────────────────
+function refreshSpendDropdowns(){
+  const users = usersArr();
+  const payer = document.getElementById('spend-payer');
+  const sel = payer.value;
+  payer.innerHTML='<option value="">— Select member —</option>'+
+    users.map(u=>`<option value="${u.id}"${u.id===sel?' selected':''}>${u.name}</option>`).join('');
+  const sl=document.getElementById('split-among-list');
+  if(!users.length){
+    sl.innerHTML='<div style="color:var(--muted);font-size:0.82rem;padding:0.5rem;">Add members first</div>';
+  } else {
+    sl.innerHTML=users.map(u=>`
+      <label class="checkbox-item">
+        <input type="checkbox" value="${u.id}" checked>
+        ${avatar(u.name,20,'0.6rem')}
+        <span>${u.name}</span>
+      </label>`).join('');
+  }
+}
+
+function renderSpendPage(){ refreshSpendDropdowns(); renderTxList(); }
+
+function setFilter(f){
+  txFilter=f;
+  document.querySelectorAll('.filter-btn').forEach(b=>b.className='filter-btn');
+  if(f==='all')      document.getElementById('filter-all').className='filter-btn f-active';
+  if(f==='badminton')document.getElementById('filter-bad').className='filter-btn f-bad';
+  if(f==='coffee')   document.getElementById('filter-coffee').className='filter-btn f-coffee';
+  renderTxList();
+}
+window.setFilter = setFilter;
+
+function renderTxList(){
+  const list = document.getElementById('tx-list');
+  const users = usersArr();
+  let exps = expensesArr().sort((a,b)=>new Date(b.date)-new Date(a.date));
+  if(txFilter!=='all') exps=exps.filter(e=>e.category===txFilter);
+  if(!exps.length){ list.innerHTML='<div class="empty"><div class="empty-icon">🧾</div>No expenses yet</div>'; return; }
+  list.innerHTML=exps.map(e=>{
+    const payer=users.find(u=>u.id===e.payerId);
+    const pName=payer?payer.name:(e.payerName||'Unknown');
+    const splitIds=Array.isArray(e.splitAmong)?e.splitAmong:Object.values(e.splitAmong||{});
+    const splitNames=splitIds.map(sid=>{const u=users.find(u=>u.id===sid);return u?u.name:'?';}).join(', ');
+    const isBad=e.category==='badminton';
+    const old=isOld(e.date);
+    return `
+      <div class="tx-item">
+        <div style="display:flex;flex-direction:column;gap:0.4rem;">
+          <span class="badge ${isBad?'badge-bad':'badge-coffee'}">${isBad?'🏸 Badminton':'☕ Coffee'}</span>
+          ${old?'<span class="badge badge-old">⚠ Old</span>':''}
+        </div>
+        <div class="tx-info">
+          <div style="font-size:0.88rem;">
+            <span style="color:${uColor(pName)};font-weight:600;">${pName}</span> paid
+            ${e.note?`· <span style="color:var(--muted)">${e.note}</span>`:''}
+          </div>
+          <div class="tx-meta">${e.date} · Split: ${splitNames} · ÷${splitIds.length} = ${fmt(e.amount/splitIds.length)} each</div>
+        </div>
+        <div class="tx-right">
+          <div class="tx-amount" style="color:${isBad?'var(--accent-bad)':'var(--accent-coffee)'}">${fmt(e.amount)}</div>
+          <button class="btn btn-sm btn-outline-danger" onclick="deleteExpense('${e.id}')">✕ Delete</button>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+async function addSpend(){
+  const category = document.getElementById('spend-category').value;
+  const date     = document.getElementById('spend-date').value;
+  const payerId  = document.getElementById('spend-payer').value;
+  const amount   = parseFloat(document.getElementById('spend-amount').value);
+  const note     = document.getElementById('spend-note').value.trim();
+  const boxes    = document.getElementById('split-among-list').querySelectorAll('input[type="checkbox"]');
+  const splitAmong = Array.from(boxes).filter(cb=>cb.checked).map(cb=>cb.value);
+  if(!date)               { toast('Please select a date'); return; }
+  if(!payerId)            { toast('Please select who paid'); return; }
+  if(!amount||amount<=0)  { toast('Please enter a valid amount'); return; }
+  if(!splitAmong.length)  { toast('Select at least one person to split with'); return; }
+  const users=usersArr();
+  const pu=users.find(u=>u.id===payerId);
+  const data={ category, date, payerId, payerName:pu?pu.name:'', amount, note, splitAmong, createdAt:Date.now() };
+  if(isFirebase){ await push(ref(db,'expenses'), data); }
+  else { const id='e'+Date.now(); S.expenses[id]=data; localSave(); renderTxList(); }
+  document.getElementById('spend-amount').value='';
+  document.getElementById('spend-note').value='';
+  toast(`Recorded! ${fmt(amount)} ÷ ${splitAmong.length} = ${fmt(amount/splitAmong.length)} each`);
+}
+window.addSpend = addSpend;
+
+async function deleteExpense(id){
+  if(!confirm('Delete this expense?')) return;
+  if(isFirebase){ await remove(ref(db,'expenses/'+id)); }
+  else { delete S.expenses[id]; localSave(); renderTxList(); }
+  toast('Expense deleted');
+}
+window.deleteExpense = deleteExpense;
+
+async function deleteOldExpenses(){
+  const exps=expensesArr().filter(e=>isOld(e.date));
+  if(!exps.length){ toast('No expenses older than 2 months'); return; }
+  if(!confirm(`Delete ${exps.length} expense(s) older than 2 months?`)) return;
+  if(isFirebase){ await Promise.all(exps.map(e=>remove(ref(db,'expenses/'+e.id)))); }
+  else { exps.forEach(e=>delete S.expenses[e.id]); localSave(); renderTxList(); }
+  toast(`Deleted ${exps.length} old expense(s) 🗑`);
+}
+window.deleteOldExpenses = deleteOldExpenses;
+
+// ── SPLIT ─────────────────────────────────────────────
+function computeNet(){
+  const net={};
+  usersArr().forEach(u=>net[u.id]=0);
+  expensesArr().forEach(e=>{
+    const splitIds=Array.isArray(e.splitAmong)?e.splitAmong:Object.values(e.splitAmong||{});
+    const share=e.amount/splitIds.length;
+    net[e.payerId]=(net[e.payerId]||0)+e.amount;
+    splitIds.forEach(uid=>{ net[uid]=(net[uid]||0)-share; });
+  });
+  return net;
+}
+
+function computeSettlements(net){
+  const users=usersArr();
+  const debtors=users.filter(u=>(net[u.id]||0)<-0.005).map(u=>({...u,bal:net[u.id]}));
+  const creditors=users.filter(u=>(net[u.id]||0)>0.005).map(u=>({...u,bal:net[u.id]}));
+  const txs=[];
+  const d=debtors.map(x=>({...x})),c=creditors.map(x=>({...x}));
+  let di=0,ci=0;
+  while(di<d.length&&ci<c.length){
+    const amt=Math.min(-d[di].bal,c[ci].bal);
+    if(amt>0.005) txs.push({fromId:d[di].id,from:d[di].name,toId:c[ci].id,to:c[ci].name,amt});
+    d[di].bal+=amt; c[ci].bal-=amt;
+    if(Math.abs(d[di].bal)<0.005) di++;
+    if(Math.abs(c[ci].bal)<0.005) ci++;
+  }
+  return txs;
+}
+
+function renderSplitPage(){
+  const exps=expensesArr();
+  let total=0,bad=0,cof=0;
+  exps.forEach(e=>{ total+=e.amount; if(e.category==='badminton') bad+=e.amount; else cof+=e.amount; });
+  document.getElementById('stat-total').textContent=fmt(total);
+  document.getElementById('stat-bad').textContent=fmt(bad);
+  document.getElementById('stat-coffee').textContent=fmt(cof);
+  const users=usersArr();
+  const net=computeNet();
+  const wrap=document.getElementById('balance-table-wrap');
+  if(!users.length){ wrap.innerHTML='<div class="empty"><div class="empty-icon">⚖️</div>No members yet</div>'; return; }
+  const rows=users.map(u=>{
+    const b=net[u.id]||0;
+    const cls=b>0.005?'bal-pos':b<-0.005?'bal-neg':'bal-zero';
+    const lbl=b>0.005?'▲ gets back':b<-0.005?'▼ owes':'✓ settled';
+    const paid=exps.filter(e=>e.payerId===u.id).reduce((s,e)=>s+e.amount,0);
+    const splitIds_sum=exps.reduce((s,e)=>{
+      const ids=Array.isArray(e.splitAmong)?e.splitAmong:Object.values(e.splitAmong||{});
+      return ids.includes(u.id)?s+e.amount/ids.length:s;
+    },0);
+    return `<tr>
+      <td><div style="display:flex;align-items:center;gap:0.6rem;">${avatar(u.name)}${u.name}</div></td>
+      <td>${fmt(paid)}</td><td>${fmt(splitIds_sum)}</td>
+      <td class="${cls}">${lbl} ${fmt(Math.abs(b))}</td>
+    </tr>`;
+  }).join('');
+  wrap.innerHTML=`<table class="split-table"><thead><tr><th>Member</th><th>Paid</th><th>Share</th><th>Net Balance</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+// ── DUES ──────────────────────────────────────────────
+function renderDuesPage(){
+  const net=computeNet();
+  const settlements=computeSettlements(net);
+  const paidKeys=paidDuesArr();
+  const breakdown={};
+  const users=usersArr();
+  expensesArr().forEach(e=>{
+    const payer=users.find(u=>u.id===e.payerId);
+    if(!payer) return;
+    const splitIds=Array.isArray(e.splitAmong)?e.splitAmong:Object.values(e.splitAmong||{});
+    const share=e.amount/splitIds.length;
+    splitIds.forEach(uid=>{
+      if(uid===e.payerId) return;
+      const k=dueKey(uid,e.payerId);
+      if(!breakdown[k]) breakdown[k]=[];
+      breakdown[k].push({date:e.date,cat:e.category,note:e.note,share});
+    });
+  });
+  let pending=0,paidAmt=0;
+  settlements.forEach(t=>{
+    const k=dueKey(t.fromId,t.toId);
+    if(paidKeys.includes(k)) paidAmt+=t.amt; else pending+=t.amt;
+  });
+  document.getElementById('due-pending').textContent=fmt(pending);
+  document.getElementById('due-paid').textContent=fmt(paidAmt);
+  const list=document.getElementById('dues-list');
+  if(!settlements.length){ list.innerHTML='<div class="empty"><div class="empty-icon">✅</div>All settled up! No dues.</div>'; return; }
+  list.innerHTML=settlements.map(t=>{
+    const k=dueKey(t.fromId,t.toId);
+    const isPaid=paidKeys.includes(k);
+    const bk=breakdown[k]||[];
+    const bkHtml=bk.length?`
+      <div class="due-breakdown">
+        <div class="due-breakdown-label">Breakdown · ${bk.length} expense${bk.length>1?'s':''}</div>
+        ${bk.map(b=>`<div class="due-row"><span>${b.date} · ${b.cat==='badminton'?'🏸 Badminton':'☕ Coffee'}${b.note?' · '+b.note:''}</span><span>${fmt(b.share)}</span></div>`).join('')}
+      </div>`:'';
+    return `
+      <div class="due-card${isPaid?' is-paid':''}">
+        <div class="due-header">
+          <div class="due-persons">
+            ${avatar(t.from)}<strong>${t.from}</strong>
+            <span class="due-arrow">→ owes →</span>
+            ${avatar(t.to)}<strong>${t.to}</strong>
+          </div>
+          <div class="due-right">
+            <div class="due-amount${isPaid?' paid':''}">${fmt(t.amt)}</div>
+            ${isPaid
+              ?`<span class="badge-paid-btn">✓ Paid</span>`
+              :`<button class="btn-outline-success" onclick="markPaid('${t.fromId}','${t.toId}')">Mark Paid</button>`}
+          </div>
+        </div>
+        ${bkHtml}
+      </div>`;
+  }).join('');
+}
+
+async function markPaid(fromId,toId){
+  const k=dueKey(fromId,toId);
+  const safeKey=k.replace(/\|/g,'_pipe_');
+  if(isFirebase){ await set(ref(db,'paidDues/'+safeKey),true); }
+  else { S.paidDues[safeKey]=true; localSave(); renderDuesPage(); }
+  toast('Marked as paid ✓');
+}
+window.markPaid = markPaid;
+
+async function clearPaidDues(){
+  const net=computeNet();
+  const active=computeSettlements(net).map(t=>dueKey(t.fromId,t.toId));
+  const paidKeys=paidDuesArr();
+  const toClear=active.filter(k=>paidKeys.includes(k));
+  if(!toClear.length){ toast('No paid dues to clear'); return; }
+  if(!confirm('Remove paid dues from view?')) return;
+  if(isFirebase){ await Promise.all(toClear.map(k=>remove(ref(db,'paidDues/'+k.replace(/\|/g,'_pipe_'))))); }
+  else { toClear.forEach(k=>delete S.paidDues[k.replace(/\|/g,'_pipe_')]); localSave(); renderDuesPage(); }
+  toast('Cleared paid dues');
+}
+window.clearPaidDues = clearPaidDues;
+
+// ── BOOT ──────────────────────────────────────────────
+document.getElementById('spend-date').valueAsDate = new Date();
+
+if(configIsValid(FIREBASE_CONFIG)){
+  initApp(FIREBASE_CONFIG);
+} else {
+  // Check if saved in localStorage
+  try {
+    const saved = localStorage.getItem('splitpool_fb_config');
+    if(saved){
+      const cfg=JSON.parse(saved);
+      if(configIsValid(cfg)){ initApp(cfg); }
+      else { showSetupScreen(); }
+    } else { showSetupScreen(); }
+  } catch(e){ showSetupScreen(); }
+}
+
+function showSetupScreen(){
+  document.getElementById('loading-screen').classList.add('hidden');
+  document.getElementById('setup-screen').classList.remove('hidden');
+}
+
+// Expose setup functions
+window.saveFirebaseConfig = function(){
+  const cfg={
+    apiKey:           document.getElementById('cfg-apiKey').value.trim(),
+    authDomain:       document.getElementById('cfg-authDomain').value.trim(),
+    databaseURL:      document.getElementById('cfg-databaseURL').value.trim(),
+    projectId:        document.getElementById('cfg-projectId').value.trim(),
+    appId:            document.getElementById('cfg-appId').value.trim(),
+  };
+  if(!configIsValid(cfg)){
+    document.getElementById('setup-error').style.display='block';
+    return;
+  }
+  localStorage.setItem('splitpool_fb_config', JSON.stringify(cfg));
+  initApp(cfg);
+};
+
+window.useDemoMode = function(){
+  document.getElementById('setup-screen').classList.add('hidden');
+  document.getElementById('loading-screen').classList.remove('hidden');
+  fallbackToLocal();
+};
+
+</script>
+</body>
+</html>
